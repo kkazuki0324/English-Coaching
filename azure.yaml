@@ -1,0 +1,33 @@
+# Azure Developer CLI configuration
+name: english-coaching
+metadata:
+  template: english-coaching@0.0.1-beta
+  
+services:
+  frontend:
+    project: ./frontend
+    language: js
+    host: staticwebapp
+    
+  backend:
+    project: ./backend
+    language: js
+    host: containerapp
+    docker:
+      path: ./backend/Dockerfile
+      context: ./backend
+
+hooks:
+  predeploy:
+    posix:
+      shell: sh
+      run: |
+        echo "Installing dependencies..."
+        cd frontend && npm install
+        cd ../backend && npm install
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Installing dependencies..."
+        cd frontend; npm install
+        cd ../backend; npm install
