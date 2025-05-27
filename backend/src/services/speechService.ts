@@ -52,45 +52,65 @@ export interface PauseAnalysis {
 }
 
 class SpeechService {
-  private speechConfig: sdk.SpeechConfig;
+  private speechConfig: sdk.SpeechConfig | null = null;
   private blobServiceClient: BlobServiceClient | null = null;
   private containerName = 'audio-recordings';
+  private isAzureConfigured: boolean = false;
 
   constructor() {
     // Initialize Azure Speech Service
     const speechKey = process.env.AZURE_SPEECH_KEY;
     const speechRegion = process.env.AZURE_SPEECH_REGION;
 
-    if (!speechKey || !speechRegion) {
-      throw new Error('Azure Speech Service credentials not configured');
+    if (speechKey && speechRegion) {
+      try {
+        this.speechConfig = sdk.SpeechConfig.fromSubscription(
+          speechKey,
+          speechRegion
+        );
+        this.speechConfig.speechRecognitionLanguage = 'en-US';
+        this.isAzureConfigured = true;
+        logger.info('Azure Speech Service configured successfully');
+      } catch (error) {
+        logger.error('Failed to configure Azure Speech Service:', error);
+        this.isAzureConfigured = false;
+      }
+    } else {
+      logger.info(
+        'Azure Speech Service credentials not provided - using mock mode for development'
+      );
+      this.isAzureConfigured = false;
     }
-
-    this.speechConfig = sdk.SpeechConfig.fromSubscription(
-      speechKey,
-      speechRegion
-    );
-    this.speechConfig.speechRecognitionLanguage = 'en-US';
 
     // Initialize Azure Blob Storage
     const storageAccountName = process.env.AZURE_STORAGE_ACCOUNT_NAME;
     if (storageAccountName) {
-      const credential = new DefaultAzureCredential();
-      this.blobServiceClient = new BlobServiceClient(
-        `https://${storageAccountName}.blob.core.windows.net`,
-        credential
-      );
+      try {
+        const credential = new DefaultAzureCredential();
+        this.blobServiceClient = new BlobServiceClient(
+          `https://${storageAccountName}.blob.core.windows.net`,
+          credential
+        );
+        logger.info('Azure Blob Storage configured successfully');
+      } catch (error) {
+        logger.error('Failed to configure Azure Blob Storage:', error);
+      }
     } else {
-      logger.warn('Azure Storage Account not configured - using local storage');
+      logger.info('Azure Storage Account not configured - using local storage');
     }
   }
-
   /**
-   * Analyze pronunciation using Azure Speech Service
+   * Analyze pronunciation using Azure Speech Service or mock data
    */
   async analyzePronunciation(
     audioFilePath: string,
     referenceText: string
   ): Promise<SpeechAnalysisResult> {
+    if (!this.isAzureConfigured || !this.speechConfig) {
+      logger.info('Using mock pronunciation analysis for development');
+      return this.getMockPronunciationAnalysis(referenceText);
+    }
+
     try {
       // Create audio configuration
       const audioConfig = sdk.AudioConfig.fromWavFileInput(
@@ -149,7 +169,6 @@ class SpeechService {
       throw error;
     }
   }
-
   /**
    * Perform shadowing analysis comparing user speech to reference audio
    */
@@ -157,6 +176,11 @@ class SpeechService {
     userAudioPath: string,
     referenceText: string
   ): Promise<ShadowingAnalysis> {
+    if (!this.isAzureConfigured) {
+      logger.info('Using mock shadowing analysis for development');
+      return this.getMockShadowingAnalysis(referenceText, referenceText);
+    }
+
     try {
       // Analyze pronunciation
       const pronunciationAnalysis = await this.analyzePronunciation(
@@ -355,7 +379,6 @@ class SpeechService {
 
     return suggestions;
   }
-
   /**
    * Calculate overall shadowing performance score
    */
@@ -374,6 +397,84 @@ class SpeechService {
         rhythmAnalysis.rhythm_score * weights.rhythm +
         pronunciationAnalysis.fluencyScore * weights.fluency
     );
+  }
+
+  /**
+   * Generate mock pronunciation analysis for development
+   */
+  private getMockPronunciationAnalysis(
+    referenceText: string
+  ): SpeechAnalysisResult {
+    const words = referenceText.split(' ');
+    const wordDetails: WordAnalysis[] = words.map((word) => ({
+      word,
+      accuracyScore: 75 + Math.random() * 20, // Random score between 75-95
+      errorType: Math.random() > 0.8 ? 'Mispronunciation' : 'None',
+      phonemes: [],
+    }));
+
+    const pronunciationScore = 70 + Math.random() * 25;
+    const accuracyScore = 75 + Math.random() * 20;
+    const fluencyScore = 65 + Math.random() * 30;
+    const completenessScore = 80 + Math.random() * 15;
+
+    return {
+      transcription: referenceText, // In development, assume perfect transcription
+      confidence: 0.85 + Math.random() * 0.1,
+      pronunciationScore,
+      accuracyScore,
+      fluencyScore,
+      completenessScore,
+      wordDetails,
+      overallScore: Math.round(
+        (pronunciationScore +
+          accuracyScore +
+          fluencyScore +
+          completenessScore) /
+          4
+      ),
+      feedback: [
+        'Mock analysis: Overall pronunciation is good',
+        'Practice focusing on clarity of consonants',
+        'Try to maintain consistent rhythm',
+      ],
+    };
+  }
+
+  /**
+   * Generate mock shadowing analysis for development
+   */
+  private getMockShadowingAnalysis(
+    originalText: string,
+    userText: string
+  ): ShadowingAnalysis {
+    const pronunciationAnalysis =
+      this.getMockPronunciationAnalysis(originalText);
+
+    const rhythmAnalysis: RhythmAnalysis = {
+      tempo: 150 + Math.random() * 50,
+      rhythm_score: 70 + Math.random() * 25,
+      pauses: [
+        { start: 2.5, duration: 0.5, type: 'natural' },
+        { start: 5.2, duration: 0.3, type: 'natural' },
+      ],
+    };
+
+    return {
+      originalText,
+      userText: userText || originalText,
+      pronunciationAnalysis,
+      rhythmAnalysis,
+      suggestions: [
+        'Try to match the natural pauses in the original audio',
+        'Focus on maintaining consistent tempo',
+        'Practice difficult words separately',
+      ],
+      overallScore: this.calculateShadowingScore(
+        pronunciationAnalysis,
+        rhythmAnalysis
+      ),
+    };
   }
 }
 

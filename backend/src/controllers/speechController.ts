@@ -291,4 +291,54 @@ router.get('/voices', (req: Request, res: Response) => {
   });
 });
 
+/**
+ * POST /api/speech/test-pronunciation
+ * Test pronunciation analysis endpoint (no auth required for development)
+ */
+router.post('/test-pronunciation', async (req: Request, res: Response) => {
+  try {
+    const { referenceText } = req.body;
+
+    if (!referenceText) {
+      return res.status(400).json({
+        error: 'Reference text is required',
+        code: 'MISSING_TEXT',
+      });
+    }
+
+    // Use mock audio file path for testing
+    const mockAudioPath = 'mock-audio.wav';
+
+    logger.info('Test pronunciation analysis started', {
+      referenceText: referenceText.substring(0, 50),
+    });
+
+    const analysis = await speechService.analyzePronunciation(
+      mockAudioPath,
+      referenceText
+    );
+
+    logger.info('Test pronunciation analysis completed', {
+      score: analysis.overallScore,
+      transcription: analysis.transcription,
+    });
+
+    return res.json({
+      success: true,
+      data: analysis,
+      metadata: {
+        mode: 'test',
+        processingTime: Date.now(),
+      },
+    });
+  } catch (error) {
+    logger.error('Test pronunciation analysis failed:', error);
+    return res.status(500).json({
+      error: 'Failed to analyze pronunciation',
+      code: 'ANALYSIS_FAILED',
+      details: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
 export { router as speechRouter };
